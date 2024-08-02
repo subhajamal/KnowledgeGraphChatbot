@@ -1,0 +1,28 @@
+# Knowledge Graph Chatbot
+
+## Overview
+A chatbot integrated with Neo4j and OpenAI, using LangChain to provide medical term information and general queries.
+
+## Setup
+
+1. **Create a `.env` file** in the root directory with your API keys and passwords:
+
+    ```plaintext
+    OPENAI_API_KEY=your_openai_api_key_here
+    NEO4J_PASSWORD=your_neo4j_password_here
+    ```
+
+2. **Install the required packages**:
+
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+3. **Run the chatbot**:
+
+    ```bash
+    knowledgegraph_chatbot
+    ```
+
+## License
+This project is licensed under the MIT License.
