@@ -31,7 +31,7 @@ except Exception as e:
 # Establish connection to the Neo4j database
 try:
     graph = Neo4jGraph(
-        url="bolt+s://mdb.ctos-data-team.org:9687",
+        url="bolt+s:ur url",
         username="neo4j",
         password="YOUR_NEO4J_PASSWORD_HERE"
     )
