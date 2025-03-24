@@ -1,5 +1,8 @@
-import logging
-from uuid import uuid4
+# === IMPORTS ===
+import logging  # For logging system events and errors
+from uuid import uuid4  # To generate unique session IDs
+
+# LangChain and OpenAI components
 from langchain_openai import ChatOpenAI
 from langchain.agents import AgentExecutor, create_react_agent
 from langchain.tools import Tool
@@ -9,18 +12,23 @@ from langchain.schema import StrOutputParser
 from langchain_community.chat_message_histories import Neo4jChatMessageHistory
 from langchain_community.graphs import Neo4jGraph
 from langchain import hub
+
+# UI and utility modules
 import streamlit as st
 import os
 import shelve
 
-# Configure logging
+# === CONFIGURATION ===
+# Configure logging to show info level messages
 logging.basicConfig(level=logging.INFO)
 
-# Generate unique session ID
+# Generate a unique session ID for chat context
 SESSION_ID = str(uuid4())
 print(f"Session ID: {SESSION_ID}")
 
-# Initialize the ChatOpenAI model
+# === INITIALIZE MODELS & DATABASE ===
+
+# Initialize the OpenAI LLM
 try:
     llm = ChatOpenAI(openai_api_key="YOUR_OPENAI_API_KEY_HERE")
     logging.info("OpenAI model initialization successful")
@@ -28,7 +36,7 @@ except Exception as e:
     logging.error(f"OpenAI model initialization failed: {e}")
     raise
 
-# Establish connection to the Neo4j database
+# Connect to the Neo4j Graph Database
 try:
     graph = Neo4jGraph(
         url="bolt+s:ur url",
@@ -40,22 +48,22 @@ except Exception as e:
     logging.error(f"Neo4j connection failed: {e}")
     raise
 
-# Define a prompt template for term chat
-prompt = ChatPromptTemplate.from_messages(
-    [
-        ("system", "You are an expert in medical terminology. You provide information about terms and their origins."),
-        ("human", "{input}"),
-    ]
-)
+# === DEFINE PROMPT TEMPLATE FOR SIMPLE TERM QUERIES ===
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are an expert in medical terminology. You provide information about terms and their origins."),
+    ("human", "{input}"),
+])
 
-# Define term chat pipeline
+# Build a simple LLM chain for single-turn queries (not agent-based)
 term_chat = prompt | llm | StrOutputParser()
 
-# Function to retrieve message history
+# === MEMORY ===
+# Function to retrieve chat history from Neo4j for a given session
 def get_memory(session_id):
     return Neo4jChatMessageHistory(session_id=session_id, graph=graph)
 
-# Function to query the database for terms, synonyms, and semantic types
+# === NEO4J QUERY FUNCTION ===
+# Extracts term info (definition, synonyms, semantic type) from Neo4j using the code
 def query_neo4j(code):
     try:
         if not code:
@@ -90,7 +98,8 @@ def query_neo4j(code):
         logging.error(f"Query Neo4j failed: {e}")
         return "An error occurred while querying Neo4j."
 
-# Function to query OpenAI model for general queries
+# === OPENAI FALLBACK QUERY ===
+# If Neo4j has no result, use the LLM to answer the query
 def query_openai_model(query):
     try:
         response = llm.ask(query)
@@ -99,26 +108,21 @@ def query_openai_model(query):
         logging.error(f"OpenAI query failed: {e}")
         return "An error occurred while querying OpenAI model."
 
-# Function to handle the overall querying logic
+# === QUERY HANDLER ===
+# Chooses whether to use Neo4j or fallback to OpenAI based on code detection
 def handle_query(input_query):
-    # Extract the code from the input query if possible
     code = extract_code(input_query)
-    
-    # Query Neo4j first
     neo4j_response = query_neo4j(code)
-    if neo4j_response:
-        return neo4j_response
-    else:
-        # If no data is found in Neo4j, fallback to querying OpenAI
-        return query_openai_model(input_query)
+    return neo4j_response if neo4j_response else query_openai_model(input_query)
 
-# Function to extract code from the query (simple extraction logic)
+# === CODE EXTRACTION FUNCTION ===
+# Uses regex to extract C-codes (e.g., C123456) from user input
 def extract_code(query):
     import re
     match = re.search(r'\bC\d{6}\b', query)
     return match.group(0) if match else None
 
-# Create tools for the agent
+# === TOOL DEFINITIONS FOR THE AGENT ===
 tools = [
     Tool.from_function(
         name="Medical Information",
@@ -132,7 +136,7 @@ tools = [
     ),
 ]
 
-# Create the agent using the defined tools and prompt
+# === BUILD THE AGENT EXECUTOR ===
 try:
     agent_prompt = hub.pull("hwchase17/react-chat")
     agent = create_react_agent(llm, tools, agent_prompt)
@@ -142,7 +146,7 @@ except Exception as e:
     logging.error(f"Agent creation failed: {e}")
     raise
 
-# Define the chat agent with message history
+# Wrap the agent with session-based message history
 chat_agent = RunnableWithMessageHistory(
     agent_executor,
     get_memory,
@@ -150,54 +154,59 @@ chat_agent = RunnableWithMessageHistory(
     history_messages_key="chat_history",
 )
 
-# Streamlit UI
+# === STREAMLIT CHAT INTERFACE ===
 st.title("CRDChat: The ChatGPT of the CRDC!")
 USER_AVATAR = "👤"
 BOT_AVATAR = "🤖"
 
-# Load chat history from shelve file
+# === CHAT HISTORY HANDLERS ===
 def load_chat_history():
     with shelve.open("chat_history") as db:
         return db.get("messages", [])
 
-# Save chat history to shelve file
 def save_chat_history(messages):
     with shelve.open("chat_history") as db:
         db["messages"] = messages
 
-# Initialize or load chat history
+# Load chat history into session state
 if "messages" not in st.session_state:
     st.session_state.messages = load_chat_history()
 
-# Sidebar with a button to delete chat history
+# === SIDEBAR OPTIONS ===
 with st.sidebar:
     if st.button("Delete Chat History"):
         st.session_state.messages = []
         save_chat_history([])
 
-# Display chat messages
+# === CHAT DISPLAY SECTION ===
 for message in st.session_state.messages:
     avatar = USER_AVATAR if message["role"] == "user" else BOT_AVATAR
     with st.chat_message(message["role"], avatar=avatar):
         st.markdown(message["content"])
 
-# Main chat interface
+# === MAIN CHAT INPUT AND RESPONSE LOGIC ===
 if prompt := st.chat_input("How can I help?"):
+    # Show user message
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user", avatar=USER_AVATAR):
         st.markdown(prompt)
 
+    # Get assistant response
     with st.chat_message("assistant", avatar=BOT_AVATAR):
         message_placeholder = st.empty()
         full_response = ""
         try:
-            response = chat_agent.invoke({"input": prompt}, {"configurable": {"session_id": SESSION_ID}})
+            response = chat_agent.invoke(
+                {"input": prompt}, {"configurable": {"session_id": SESSION_ID}}
+            )
             full_response = response["output"]
         except Exception as e:
             logging.error(f"Error during chat: {e}")
             full_response = "An error occurred during the chat."
         message_placeholder.markdown(full_response)
+
+    # Save assistant response to session
     st.session_state.messages.append({"role": "assistant", "content": full_response})
 
-# Save chat history after each interaction
+# Save messages to persistent file after each interaction
 save_chat_history(st.session_state.messages)
